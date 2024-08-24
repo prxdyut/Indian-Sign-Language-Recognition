@@ -4,6 +4,7 @@ import {
   initializeBrowser,
   isLoggedIn,
   sendWhatsappMessage,
+  toggleAudioRecording,
   toggleMeet,
 } from "./controllers/browser";
 import { whatsappSocket } from "./sockets/whatsapp";
@@ -15,6 +16,23 @@ router.use(express.json());
 
 router.get("/meeting", async (req: Request, res: Response) => {
   await toggleMeet();
+  res.json({ success: true, message: "Meeting Link Sent!" });
+});
+
+router.get("/audio", async (req: Request, res: Response) => {
+  await toggleAudioRecording();
+  res.json({ success: true, message: "Meeting Link Sent!" });
+});
+
+router.get("/message", async (req: Request, res: Response) => {
+  const { contactName, message } = req.query as {
+    contactName: string;
+    message: string;
+  };
+  await sendWhatsappMessage({
+    contactName,
+    message,
+  });
   res.json({ success: true, message: "Meeting Link Sent!" });
 });
 

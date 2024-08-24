@@ -1,6 +1,8 @@
+import translate from "google-translate-api";
 import puppeteer, { Browser, BrowserContext, Page } from "puppeteer";
+import say from "say";
 
-let context: { browser?: Browser; page?: Page } = {};
+let context: { browser?: Browser; page?: Page; page2?: Page } = {};
 let temporaryContext: Page | undefined = undefined;
 let currentAction: string = "";
 
@@ -22,6 +24,16 @@ export async function initializeBrowser(): Promise<void> {
     context.page = await context.browser?.newPage();
     await context.page?.setViewport({ width: 1366, height: 768 });
     await context.page?.goto("https://web.whatsapp.com", { timeout: 60000 });
+    context.page2 = await context.browser?.newPage();
+    await context.page2?.setViewport({ width: 1366, height: 768 });
+    await context.page2?.goto("https://translate.google.com", {
+      timeout: 60000,
+    });
+    await context.page.bringToFront();
+    const browserContext = context.browser?.defaultBrowserContext();
+    await browserContext?.overridePermissions("https://web.whatsapp.com", [
+      "microphone",
+    ]);
     console.log("Browser initialized and WhatsApp Web loaded");
   } catch (error) {
     console.error("Error initializing browser:", error);
@@ -162,7 +174,12 @@ async function joinMeet() {
     });
 
     await delay(1000);
-    await temporaryContext?.click('[aria-label="Stop camera"]');
+    try {
+      await temporaryContext?.waitForSelector('[aria-label="Stop camera"]', {
+        timeout: 1000,
+      });
+      await temporaryContext?.click('[aria-label="Stop camera"]');
+    } catch (error) {}
     await delay(1000);
     await temporaryContext?.click('[aria-label="Join meeting"]');
     await delay(1000);
@@ -182,6 +199,43 @@ async function leaveMeet() {
   } catch (error) {
     console.log(error);
     throw new Error("Error getting meet link.");
+  }
+}
+let isRecordingAudio = false;
+async function sendAudio() {
+  if (!context.page) return;
+
+  try {
+    await context.page?.waitForSelector('[aria-label="Send"]');
+    await context.page?.click('[aria-label="Send"]');
+    await closeChat();
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+async function startAudioRecording() {
+  if (!context.page) return;
+
+  try {
+    await openContact("Pradyut Das 444");
+    await delay(2000);
+    await context.page?.waitForSelector('button[aria-label="Voice message"]', {
+      timeout: 1000,
+    });
+    await context.page?.click('button[aria-label="Voice message"]');
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+export async function toggleAudioRecording() {
+  if (isRecordingAudio) {
+    await sendAudio();
+    isRecordingAudio = false;
+  } else {
+    await startAudioRecording();
+    isRecordingAudio = true;
   }
 }
 
@@ -227,7 +281,7 @@ function getMessagesAfterAMessage(
       item?.time === (message?.time || " ")
   );
   if (index === -1) {
-    return messages;
+    return [messages[messages.length - 1]];
   }
   return messages.slice(index + 1);
 }
@@ -239,6 +293,7 @@ export async function toggleMeet() {
       message,
       contactName: "Pradyut Das 444",
     });
+    await closeChat()
     currentAction = "";
   } else {
     const message = `Hey! I Invite you to my call.\n${meetingLink}\nclick on the link to join the call.`;
@@ -260,6 +315,11 @@ async function resetSearch(): Promise<void> {
     await context.page?.click('[aria-label="Cancel search"]');
   } catch (error) {}
 }
+function isSentence(text: string) {
+  const sentenceRegex = /^[A-Z].*[.!?]$/;
+  return sentenceRegex.test(text);
+}
+
 async function fetchUnreadMessages() {
   if (!context.page) return [];
   if (!(await isLoggedIn())) return;
@@ -278,7 +338,9 @@ async function fetchUnreadMessages() {
     ).map((_) => _.textContent);
   });
 
-  if (unreads.length === 0) return [];
+  if (!unreads.length) return [];
+  if (unreads.includes("Pradyut Das 444")) unreads = ["Pradyut Das 444"];
+  else return [];
 
   await closeChat();
   for (const contact of unreads) {
@@ -291,53 +353,83 @@ async function fetchUnreadMessages() {
     });
     const messages = await context.page?.evaluate(() => {
       let messages: any[] = [];
-      document
-        .querySelectorAll('.message-in, .message-out')
-        .forEach((elem) => {
-          let text = "";
-          const isReceived = elem.classList.contains('message-in');
-          
-          const textElement = elem.querySelector("[class*='copyable-text'] > div");
-          if (textElement) {
-            const spanElement = textElement.querySelector("span[aria-label] span") || textElement.querySelector("span[class]");
-            if (spanElement) {
-              spanElement.childNodes.forEach((_: ChildNode) => {
-                const n = _.nodeName;
-                if (n === "#text") {
-                  text += (_.textContent || "").trim();
-                }
-                if (n === "IMG") {
-                  const imgElement = _ as HTMLElement;
-                  text += imgElement.getAttribute("alt") || "";
-                }
-              });
-            }
+      document.querySelectorAll(".message-in").forEach((elem) => {
+        let text = "";
+        const textElement = elem.querySelector(
+          "[class*='copyable-text'] > div"
+        );
+        if (textElement) {
+          const spanElement =
+            textElement.querySelector("span[aria-label] span") ||
+            textElement.querySelector("span[class]");
+          if (spanElement) {
+            spanElement.childNodes.forEach((_: ChildNode) => {
+              const n = _.nodeName;
+              if (n === "#text") {
+                text += (_.textContent || "").trim();
+              }
+              if (n === "IMG") {
+                const imgElement = _ as HTMLElement;
+                text += imgElement.getAttribute("alt") || "";
+              }
+            });
           }
+        }
 
-          const timeElement = elem.querySelector("[class*='copyable-text']")
-            ?.parentElement?.querySelector("div:nth-of-type(2) > div > span");
-          const time = timeElement ? (timeElement as HTMLElement).innerText : "-";
+        const timeElement = elem
+          .querySelector("[class*='copyable-text']")
+          ?.parentElement?.querySelector("div:nth-of-type(2) > div > span");
+        const time = timeElement ? (timeElement as HTMLElement).innerText : "-";
 
-          messages.push({ text, time, isReceived });
-        });
+        messages.push({ text, time });
+      });
       return messages;
     });
+
     try {
       const newMessages = getMessagesAfterAMessage(
         store[contact as string],
         messages
       );
-      console.log(newMessages);
+
+      await context.page2?.bringToFront();
+      for (const message of newMessages) {
+        const oldText = (await context.page2?.$eval(
+          '[aria-label="Source text"] + [jscontroller]',
+          (el) => (el.textContent || "") as string
+        )) as string;
+        for (let i = 0; i < oldText.length; i++) {
+          await context.page2?.keyboard.press("Backspace");
+        }
+        await context.page2?.waitForSelector('[aria-label="Source text"]', {
+          timeout: 6000,
+        });
+        await context.page2?.focus('[aria-label="Source text"]');
+        await context.page2?.keyboard.type(message.text);
+        await delay(500);
+        await context.page2?.waitForNetworkIdle({ timeout: 60000 });
+        await context.page2?.click('[aria-label="Listen to translation"]');
+        await delay(5000);
+        await context.page2?.waitForSelector(
+          '[aria-label="Listen to translation"]',
+          { timeout: 600000000 }
+        );
+        await context.page2?.click('[aria-label="Clear source text"]');
+      }
+      await context.page?.bringToFront();
 
       updateStore(
         contact as string,
-        messages?.[messages?.length - 1] ?? messages?.[0]
+        messages[messages.length - 1] ?? messages[0]
       );
-    } catch (error) {}
+    } catch (error) {
+      console.error("Error in processing messages:", error);
+    }
   }
-  controlNetworkConditions(false);
+  await controlNetworkConditions(false);
   await closeChat();
 }
+
 let isFetchingUnreadMessages = false;
 setInterval(async () => {
   if (!isFetchingUnreadMessages) {

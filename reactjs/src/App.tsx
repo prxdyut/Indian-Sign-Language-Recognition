@@ -17,6 +17,7 @@ function App() {
     {}
   );
   const [lastSign, setLastSign] = useState<string | null>(null);
+  const [isWebcamOn, setIsWebcamOn] = useState(true);
 
   useEffect(() => {
     let interval: any;
@@ -26,7 +27,7 @@ function App() {
       console.log("Handpose model loaded.");
       interval = setInterval(() => {
         detect(net);
-      }, 1000);
+      }, 2000);
     };
 
     runHandpose();
@@ -64,8 +65,8 @@ function App() {
           const gestureEstimation = GE.estimate(landmarks as any, 7.5);
           const sign = gestureEstimation.gestures.reduce(
             (max, obj) => (obj.score > max.score ? obj : max),
-            { score: 0, name: '' } // Initial value
-          );          
+            { score: 0, name: "" } // Initial value
+          );
 
           if (gestureEstimation.gestures.length && sign) {
             const gestureName = sign.name;
@@ -120,51 +121,147 @@ function App() {
     setSelectedDevice(event.target.value);
   };
 
+  const toggleWebcam = () => {
+    setIsWebcamOn(!isWebcamOn);
+  };
+  useEffect(() => {
+    if (gesture != "No hand detected") {
+      switch (gesture) {
+        case "B":
+          fetch("http://localhost:7000/audio");
+          break;
+        case "A":
+          fetch("http://localhost:7000/meeting");
+          break;
+
+        default:
+          break;
+      }
+    }
+  }, [gesture]);
   return (
-    <div className="App">
-      <header className="App-header">
-        <select value={selectedDevice} onChange={handleDeviceChange}>
-          {videoDevices.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || `Camera ${device.deviceId.slice(0, 5)}`}
-            </option>
-          ))}
-        </select>
+    <div
+      className="App"
+      style={{
+        fontFamily: "Arial, sans-serif",
+        maxWidth: "800px",
+        margin: "0 auto",
+        padding: "20px",
+      }}
+    >
+      <h3 style={{ textAlign: "center", color: "white" }}>
+        Hand Gesture Recognition
+      </h3>
 
-        <Webcam
-          ref={webcamRef}
-          audio={false}
-          videoConstraints={{
-            deviceId: selectedDevice,
-          }}
-          style={{
-            position: "absolute",
-            marginLeft: "auto",
-            marginRight: "auto",
-            left: 0,
-            right: 0,
-            textAlign: "center",
-            zIndex: 9,
-            width: 640,
-            height: 480,
-          }}
-        />
-
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: 640,
-            height: 480,
-            pointerEvents: "none", // Allows clicking through the canvas
-          }}
-        />
-        <div style={{ position: "absolute", top: 500, fontSize: 24 }}>
-          Detected Sign: {gesture}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "20px",
+        }}
+      >
+        <div>
+          <label htmlFor="camera-select" style={{ marginRight: "10px" }}>
+            Select Camera:
+          </label>
+          <select
+            id="camera-select"
+            value={selectedDevice}
+            onChange={handleDeviceChange}
+            style={{ padding: "5px", borderRadius: "5px" }}
+          >
+            {videoDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Camera ${device.deviceId.slice(0, 5)}`}
+              </option>
+            ))}
+          </select>
         </div>
-      </header>
+        <button
+          onClick={toggleWebcam}
+          style={{
+            padding: "10px 20px",
+            backgroundColor: isWebcamOn ? "#f44336" : "#4CAF50",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+          }}
+        >
+          {isWebcamOn ? "Turn Off Webcam" : "Turn On Webcam"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          position: "relative",
+          height: "50vh",
+          margin: "0 auto",
+          border: "2px solid #ddd",
+          borderRadius: "10px",
+          overflow: "hidden",
+          aspectRatio: "16/9",
+        }}
+      >
+        {isWebcamOn && (
+          <>
+            <Webcam
+              ref={webcamRef}
+              audio={false}
+              videoConstraints={{
+                deviceId: selectedDevice,
+              }}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+            <canvas
+              ref={canvasRef}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+              }}
+            />
+          </>
+        )}
+        {!isWebcamOn && (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: "#f0f0f0",
+              fontSize: "18px",
+              color: "#666",
+            }}
+          >
+            Webcam is turned off
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          marginTop: "20px",
+          padding: "15px",
+          backgroundColor: "#f0f0f0",
+          borderRadius: "10px",
+          textAlign: "center",
+        }}
+      >
+        <h2 style={{ margin: "0 0 10px 0", color: "#333" }}>Detected Sign</h2>
+        <p style={{ fontSize: "24px", fontWeight: "bold", color: "#4CAF50" }}>
+          {gesture || "No hand detected"}
+        </p>
+      </div>
     </div>
   );
 }
