@@ -145,6 +145,7 @@ export const meetingLink = "https://meet.jit.si/RelievedPublicsExplainVery";
 let whatsappInitialized = false;
 
 async function controlNetworkConditions(offline: boolean) {
+  return;
   if (!context.page) return;
   const client = await context.page?.target().createCDPSession();
   await client.send("Network.enable");
@@ -293,7 +294,7 @@ export async function toggleMeet() {
       message,
       contactName: "Pradyut Das 444",
     });
-    await closeChat()
+    await closeChat();
     currentAction = "";
   } else {
     const message = `Hey! I Invite you to my call.\n${meetingLink}\nclick on the link to join the call.`;
